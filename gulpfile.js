@@ -45,8 +45,15 @@ gulp.task("docs", function () {
     .pipe(gulp.dest("dist"));
 });
 
-gulp.task("default", ["serve", "vendorJs", "layouts", "docs"], function () {
+gulp.task("app", function () {
+  gulp.src("src/app/**/*.jade")
+    .pipe(gJade())
+    .pipe(gulp.dest("dist/app"));
+});
+
+gulp.task("default", ["serve", "vendorJs", "layouts", "app", "docs"], function () {
     gulp.watch("README.md", ["docs"]);
     gulp.watch("src/layouts/**/*.jade", ["layouts"]);
     gulp.watch("vendor/**/*.js", ["vendorJs"]);
+    gulp.watch("src/app/**/*.jade", ["app"]);
 });
