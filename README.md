@@ -3,6 +3,8 @@
 
 Cause we're professionals.
 
+It's supposed to intelligently(ish) watch your src tree and rerender on changes.
+
 ## Use It
 
     npm install
