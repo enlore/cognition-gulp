@@ -6,6 +6,7 @@ var gChmod    = require("gulp-chmod");
 var gWeb      = require("gulp-webserver");
 var gJade     = require("gulp-jade");
 var gStylus   = require("gulp-stylus");
+var gMd       = require("gulp-markdown");
 
 var webServerConfig = {
   livereload: true,
@@ -31,14 +32,21 @@ gulp.task("vendorJs", function () {
     .pipe(gulp.dest("dist/js/vendor"));
 });
 
-gulp.task("layout", function () {
+gulp.task("layouts", function () {
   gulp.src("src/layouts/**/*.jade")
   .pipe(gFilter(["*", "!**/base.jade"]))
     .pipe(gJade())
     .pipe(gulp.dest("dist"));
 });
 
-gulp.task("default", ["serve", "vendorJs", "layout"], function () {
-    gulp.watch("src/layouts/**/*.jade", ["layout"]);
+gulp.task("docs", function () {
+  gulp.src("README.md")
+    .pipe(gMd())
+    .pipe(gulp.dest("dist"));
+});
+
+gulp.task("default", ["serve", "vendorJs", "layouts", "docs"], function () {
+    gulp.watch("README.md", ["docs"]);
+    gulp.watch("src/layouts/**/*.jade", ["layouts"]);
     gulp.watch("vendor/**/*.js", ["vendorJs"]);
 });
