@@ -1,0 +1,17 @@
+include mixins/util
+
+doctype html
+html
+  head
+
+  body
+    block body
+
+    #cogRoot
+
+    +script("/js/vendor/jquery.js")
+    +script("/js/vendor/catbus.js")
+    +script("/js/vendor/ndash.js")
+    script.
+      $.cognition.init($("#cogRoot"), "/app.html");
+
