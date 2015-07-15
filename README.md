@@ -1,7 +1,7 @@
 # Cognition Starter Pack
 ## Pro Edition
 
-Cause we're professionals.  Or proffesionals. I can never remember.
+Cause we're professionals.
 
 ## Use It
 
