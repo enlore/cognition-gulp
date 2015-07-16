@@ -1756,11 +1756,11 @@
             sensor.filter(filterMethod);
         }
 
+        var multiSensor = null;
         if(def.watch.length > 1) {
 
-                var multiSensor = sensor; // add source (multi to source) and grab() -- grab all data upstream in a merged
+                multiSensor = sensor; // add source (multi to source) and grab() -- grab all data upstream in a merged
                 sensor = sensor.merge().batch();
-                multiSensor.autorun();
 
         } else if(def.batch) {
             sensor.batch();
@@ -1787,6 +1787,9 @@
 
         if(def.defer)
             sensor.defer();
+
+        if(multiSensor)
+            multiSensor.autorun();
 
         if(def.autorun){
             sensor.autorun();
