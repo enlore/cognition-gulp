@@ -39,7 +39,6 @@ gulp.task("vendorCss", function () {
     .pipe(gulp.dest("dist/css/vendor"));
 });
 
-
 gulp.task("layouts", function () {
   gulp.src("src/layouts/**/*.jade")
   .pipe(gFilter(["*", "!**/base.jade"]))
@@ -47,6 +46,10 @@ gulp.task("layouts", function () {
     .pipe(gulp.dest("dist"));
 });
 
+/**
+ * Styles are pulled from throughout the apps src tree (anything in src/app/)
+ * and bundled into one file to be served with the app's assets
+ */
 gulp.task("styles", function () {
   glup.src("src/app/**/*.styl")
     .pipe(gStylus())
