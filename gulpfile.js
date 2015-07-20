@@ -2,6 +2,7 @@ require("colors");
 var gulp      = require("gulp");
 var gFilter   = require("gulp-filter");
 var gChmod    = require("gulp-chmod");
+var gConcat   = require("gulp-concat");
 
 var gWeb      = require("gulp-webserver");
 var gJade     = require("gulp-jade");
@@ -32,11 +33,25 @@ gulp.task("vendorJs", function () {
     .pipe(gulp.dest("dist/js/vendor"));
 });
 
+gulp.task("vendorCss", function () {
+  gulp.src("vendor/css/**/*.css")
+    .pipe(gChmod(664))
+    .pipe(gulp.dest("dist/css/vendor"));
+});
+
+
 gulp.task("layouts", function () {
   gulp.src("src/layouts/**/*.jade")
   .pipe(gFilter(["*", "!**/base.jade"]))
     .pipe(gJade())
     .pipe(gulp.dest("dist"));
+});
+
+gulp.task("styles", function () {
+  glup.src("src/app/**/*.styl")
+    .pipe(gStylus())
+    .pipe(gConcat("app.css"))
+    .pipe(gulp.dest("dist/css"));
 });
 
 gulp.task("docs", function () {
@@ -51,9 +66,10 @@ gulp.task("app", function () {
     .pipe(gulp.dest("dist/app"));
 });
 
-gulp.task("default", ["serve", "vendorJs", "layouts", "app", "docs"], function () {
+gulp.task("default", ["serve", "vendorJs", "vendorCss", "layouts", "app", "docs"], function () {
     gulp.watch("README.md", ["docs"]);
     gulp.watch("src/layouts/**/*.jade", ["layouts"]);
-    gulp.watch("vendor/**/*.js", ["vendorJs"]);
+    gulp.watch("vendor/js/**/*.js", ["vendorJs"]);
+    gulp.watch("vendor/css/**/*.css", ["vendorCss"]);
     gulp.watch("src/app/**/*.jade", ["app"]);
 });
