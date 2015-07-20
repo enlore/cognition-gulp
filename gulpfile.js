@@ -64,6 +64,9 @@ gulp.task("app", function () {
   gulp.src("src/app/**/*.jade")
     .pipe(gJade())
     .pipe(gulp.dest("dist/app"));
+
+  gulp.src("/src/app/**/*.html")
+    .pipe(gulp.dest("dist/app"));
 });
 
 gulp.task("default", ["serve", "vendorJs", "vendorCss", "layouts", "app", "docs"], function () {
