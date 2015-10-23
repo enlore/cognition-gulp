@@ -5,6 +5,9 @@
     var bus = ndash.bus = $.catbus = catbus;
     var uid = 0;
 
+    var COG_ROOT = bus.demandTree('COG_ROOT');
+    var ALIAS_ROOT= bus.demandTree('ALIAS_ROOT');
+
     var buildNum = 'NEED_BUILD_NUM';
 
     var sessionTimestamp = Date.now();
@@ -112,8 +115,8 @@
 
         tryToDownload(resolvedUrl);
 
-        var cogDownloadStatus = cogDownloadMap[resolvedUrl] = bus.at("n-cog:" + resolvedUrl);
-        var fileStatus = bus.at("n-url:" + resolvedUrl);
+        var cogDownloadStatus = cogDownloadMap[resolvedUrl] = bus.location("n-cog:" + resolvedUrl);
+        var fileStatus = bus.location("n-url:" + resolvedUrl);
         fileStatus.on('done').transform(true).pipe(cogDownloadStatus).once().autorun();
 
     }
@@ -156,6 +159,26 @@
     ndash.init = function (sel, url){
 
         var root = ndash.root = new MapItem();
+        root.aliasZone = ALIAS_ROOT;
+        root.cogZone = COG_ROOT;
+
+
+        bus.defineDeepLinker('lzs', function(dir){ return LZString.compressToEncodedURIComponent(JSON.stringify(dir))},
+            function(str){ return JSON.parse(LZString.decompressFromEncodedURIComponent(str))});
+        bus.setDeepLinker('lzs');
+
+        var directions = bus.resolveDirections(window.location.search);
+        if(directions)
+            COG_ROOT.demandData('__DIRECTIONS__').write(directions);
+
+        //COG_ROOT.demandData('__DIRECTIONS__').write(
+        //    {
+        //        activeSite: {update: 'eis'},
+        //        //'eis.vendor':{update: 'antk'},
+        //        filterList: {update: [{name: "vendor", optionId: "abcw"}]}
+        //
+        //    });
+
         root.localSel = sel;
         root.createCog({url:url});
 
@@ -173,6 +196,7 @@
         }
 
         bus.dropHost(mapItem.uid);
+        mapItem.cogZone.drop();
 
         if(!mapItem.scriptData)
         {
@@ -242,13 +266,18 @@
     function stringToStringArray(str){
 
         var arr = str.split(',');
+
         for(var i = arr.length - 1; i >= 0; i--){
-            arr[i] = arr[i].trim();
-            if(!arr[i])
+            var chunk = arr[i];
+            var trimmed_chunk = chunk.trim();
+            if(!trimmed_chunk)
                 arr.splice(i, 1);
+            else if(trimmed_chunk.length !== chunk.length)
+                arr.splice(i, 1, trimmed_chunk);
         }
 
         return arr;
+
     }
 
 
@@ -268,7 +297,7 @@
         var d = {
 
             // add by('tag') default -- or topic, or name, or index
-            // add index('field') -- for by() method
+            // add index('field') -- for by() method -- or group(function(msg, topic, tag) return string?
 
             name: extractString(sel, 'data'),
             watch: extractStringArray(sel, 'watch'),
@@ -280,15 +309,25 @@
             where: extractString(sel, 'where', 'first'),
             thing: extractString(sel, 'is', 'data'), // data, feed, service
             pipe: extractString(sel, 'pipe'),
+            demand: extractString(sel, 'demand'),
             pipeWhere: extractString(sel, 'pipeWhere', 'first'), // first, last, local, outer -- todo switch to prop based
             filter: extractString(sel, 'filter'),
             topic: extractString(sel, 'for,on,topic', 'update'),
             run: extractString(sel, 'run'),
+            emit: extractString(sel, 'emit'),
+            emitPresent: extractHasAttr(sel, 'emit'),
+            emitType: null,
             once: extractBool(sel, 'once'),
             retain: extractBool(sel, 'retain'),
+            group: extractBool(sel, 'group'),
             change: extractBool(sel, 'change,distinct,skipDupes', false),
+            extract: extractString(sel, 'extract'),
             transform: extractString(sel, 'transform'),
             transformPresent: extractHasAttr(sel, 'transform'),
+            transformType: null,
+            adapt: extractString(sel, 'adapt'),
+            adaptPresent: extractHasAttr(sel, 'adapt'),
+            adaptType: null,
             autorun: extractBool(sel, 'now,auto,autorun'),
             batch: extractBool(sel, 'batch'),
             keep: extractString(sel, 'keep', 'last'), // first, all, or last
@@ -305,7 +344,9 @@
 
         d.batch = d.batch || (d.watch.length > 1); // todo -- allow multiples without batching?
 
-        applyFieldType(d, 'transform');
+        applyFieldType(d, 'transform', PROP);
+        applyFieldType(d, 'emit', STRING);
+        applyFieldType(d, 'adapt', PROP);
 
         return d;
 
@@ -365,6 +406,7 @@
             url: extractString(sel, 'url'),
             path: extractString(sel, 'path'),
             name: extractString(sel, 'name'),
+            isRoute: extractBool(sel, 'route'),
             isWire: true
         };
     }
@@ -373,6 +415,7 @@
 
         var def = {
             name: extractString(sel, 'name'),
+            isRoute: extractBool(sel, "route"),
             url: extractString(sel, 'url'),
             path: extractString(sel, 'path'),
             isAlloy: true
@@ -414,8 +457,10 @@
     function extractCogDef(sel){
 
         var d = {
+
             path: extractString(sel, "path"),
-            name: extractString(sel, "name", 'cog'),
+            name: extractString(sel, "name"),
+            isRoute: extractBool(sel, "route"),
             url: extractString(sel, "url"),
             source: extractString(sel, 'use') || extractString(sel, 'from,source'),
             item: extractString(sel, 'make') || extractString(sel, 'to,item','cog'),
@@ -437,7 +482,8 @@
 
         var d = {
             path: extractString(sel, "path"),
-            name: extractString(sel, "name", 'chain'),
+            name: extractString(sel, "name"),
+            isRoute: extractBool(sel, "route"),
             url: extractString(sel, "url"),
             prop: extractBool(sel, 'prop'),
             source: extractString(sel, "from,source"),
@@ -446,7 +492,7 @@
             build: extractString(sel, 'build', 'append'), // scratch, append, sort
             order: extractBool(sel, 'order'), // will use flex order css
             depth: extractBool(sel, 'depth'), // will use z-index
-            target: extractString(sel, "id,find")
+            target: extractString(sel, "node,id,find")
 
         };
 
@@ -478,8 +524,12 @@
         var d = {
             name: extractString(sel, 'name'),
             inherit: extractBool(sel, 'inherit'),
+            isRoute: extractBool(sel, 'route'),
             value: extractString(sel, 'value'),
             valueType: null,
+            adapt: extractString(sel, 'adapt'),
+            adaptType: null,
+            adaptPresent: extractHasAttr(sel, 'adapt'),
             service: extractString(sel, 'service'),
             serviceType: null,
             servicePresent: extractHasAttr(sel, 'service'),
@@ -492,6 +542,7 @@
 
         applyFieldType(d, 'value');
         applyFieldType(d, 'service');
+        applyFieldType(d, 'adapt', PROP);
 
         return d;
 
@@ -696,6 +747,7 @@
         hoists.each(function(){
             var hoistDef = extractWireDef($(this));
             hoistDef.isWire = true;
+            hoistDef.isAlloy = true;
             arr.push(hoistDef);
         });
 
@@ -716,6 +768,8 @@
 
     var MapItem = function() {
 
+        this.cogZone = null;
+        this.aliasZone = null;
         this.origin = null; // hosting cog if this is an alloy
         this.isAlloy = false;
         this.path = null; // local directory
@@ -911,27 +965,11 @@
     MapItem.prototype._cogBuildDeclarations = function(){
 
         var self = this;
-        var alloys = self.alloys;
         var defs = self._declarationDefs;
-        var j, k, alloy;
 
-        if(defs) {
-
-            //defs.alloys.forEach(function (def) {
-            //    self.createAlloy(def);
-            //});
-
+        if(defs)
             self._cogFirstBuildDeclarations(defs);
 
-            // // build blueprint items of current declaration type from alloys
-            //for(k = 0; k < alloys.length; k++) {
-            //    alloy = alloys[k];
-            //    // alloy is also passed so script methods (run, transform, etc.) can use it as context
-            //    self._cogFirstBuildDeclarations(alloy.defs, alloy);
-            //
-            //}
-
-        }
 
         self.scriptData.init();
 
@@ -941,16 +979,6 @@
             defs.sensors.forEach(function (def) {
                 self._createSensorFromDef3(def);
             });
-
-            //for(k = 0; k < alloys.length; k++) {
-            //    alloy = alloys[k];
-            //    // alloy is also passed so script methods (run, transform, etc.) can use it as context
-            //    var sensorDefs = alloy.defs.sensors;
-            //    for(j = 0; j < sensorDefs.length; j++){
-            //        var sensorDef = sensorDefs[j];
-            //        self._createSensorFromDef3(sensorDef, alloy);
-            //    }
-            //}
 
             defs.writes.forEach(function (def) {
                 self.createWrite(def);
@@ -971,12 +999,13 @@
     };
 
 
-
     MapItem.prototype.createLink = function(url, name, data, index, key){
 
         var self = this;
         var mi = new MapItem();
 
+        mi.cogZone = self.cogZone.demandChild();
+        mi.aliasZone = self.aliasZone.demandChild();
         mi.url = url;
         mi.itemData = data;
         mi.itemKey = key;
@@ -1011,6 +1040,9 @@
 
         var self = this;
         var mi = new MapItem();
+
+        mi.cogZone = def.isRoute ? self.cogZone.demandChild(def.name, def.isRoute) : self.cogZone.demandChild();
+        mi.aliasZone = self.aliasZone.demandChild();
 
         mi.config = copyProps(config, {});
         mi.target = def.target;
@@ -1059,6 +1091,8 @@
         var self = this;
         var mi = new MapItem();
 
+        mi.cogZone = self.cogZone.demandChild();
+        mi.aliasZone = self.aliasZone.demandChild();
         mi.isChain = true;
         mi.build = def.build;
         mi.order = def.order;
@@ -1080,7 +1114,7 @@
         mi.targetSel = self.scriptData[mi.target];
 
         var resolvedUrl = this._resolveUrl(def.url, def.path);
-        var urlPlace = bus.at("n-url:"+resolvedUrl);
+        var urlPlace = bus.location("n-url:"+resolvedUrl);
         tryToDownload(resolvedUrl);
         urlPlace.on("done").as(mi).host(mi.uid).run(mi._seekListSource).once().autorun();
         return mi;
@@ -1088,7 +1122,7 @@
     };
 
 
-
+// todo this is called an Alloy now
     MapItem.prototype.createShaft = function(def) {
 
         // url must be cached/loaded at this point
@@ -1099,10 +1133,18 @@
 
         var shaft = new MapItem();
 
+
+        //todo remove alias zones?
+        //shaft.cogZone = self.cogZone.demandChild();
+        shaft.cogZone = def.isRoute ? self.cogZone.demandChild(def.name, def.isRoute) : self.cogZone.demandChild();
+
+        shaft.aliasZone = self.aliasZone.demandChild();
+
         shaft.origin = self; // cog that hosts this alloy
         //shaft.library = url;
         shaft.isAlloy = true;
         shaft.name = def.name;
+        shaft.isRoute = def.isRoute;
 
         // insert shaft between this cog and its parent
         shaft.parent = self.parent;
@@ -1110,6 +1152,9 @@
         delete self.parent.childMap[self.uid];
         self.parent = shaft;
         shaft.childMap[self.uid] = self;
+
+        self.cogZone.insertParent(shaft.cogZone);
+
 
         shaft._cogAssignUrl(def.url);
         shaft._cogBecomeUrl();
@@ -1369,7 +1414,7 @@
         var libs = self._declarationDefs.requires;
         libs.forEach(function (def) {
             def.resolvedUrl = self._resolveUrl(def.url, def.path);
-            self._cogAddRequirement(def.resolvedUrl, def.preload, def.name);
+            self._cogAddRequirement(def.resolvedUrl, def.preload, def.name, def.isRoute);
         });
 
         if(self.requirements.length == 0) {
@@ -1461,7 +1506,7 @@
                         var resolvedURL = self._resolveUrl(def.url, def.path);
                         if(self.requirementsSeen[resolvedURL])
                             continue;
-                        newReq = createRequirement(resolvedURL, def.preload, urlReady, def.name);
+                        newReq = createRequirement(resolvedURL, def.preload, urlReady, def.name, def.isRoute);
                         newReqs.push(newReq);
                         self.requirementsSeen[resolvedURL] = newReq;
                     }
@@ -1526,17 +1571,17 @@
 
 
 
-    function createRequirement(requirementUrl, preload, fromUrl, name){
-        var urlPlace = bus.at("n-url:"+requirementUrl);
-        return {url: requirementUrl, fromUrl: fromUrl, place: urlPlace, preload: preload, name: name};
+    function createRequirement(requirementUrl, preload, fromUrl, name, isRoute){
+        var urlPlace = bus.location("n-url:"+requirementUrl);
+        return {url: requirementUrl, fromUrl: fromUrl, place: urlPlace, preload: preload, name: name, isRoute: isRoute};
     }
 
-    MapItem.prototype._cogAddRequirement = function(requirementUrl, preload, name) {
+    MapItem.prototype._cogAddRequirement = function(requirementUrl, preload, name, isRoute) {
 
         //console.log('add: '+ requirementUrl);
         var self = this;
-        var urlPlace = bus.at("n-url:"+requirementUrl);
-        var requirement = {url: requirementUrl, fromUrl: self.resolvedUrl, place: urlPlace, preload: preload, name: name};
+        var urlPlace = bus.location("n-url:"+requirementUrl);
+        var requirement = {url: requirementUrl, fromUrl: self.resolvedUrl, place: urlPlace, preload: preload, name: name, isRoute: isRoute};
 
         self.requirements.push(requirement);
         self.requirementsSeen[requirement.url] = requirement;
@@ -1560,7 +1605,7 @@
     function tryToDownload(url) {
 
 
-        var urlPlace = bus.at("n-url:"+url);
+        var urlPlace = bus.location("n-url:"+url);
         var status = urlPlace.peek("status");
 
         if(status && (status.msg.active || status.msg.done))
@@ -1690,7 +1735,7 @@
 
         var self = this;
         self._cogAssignUrl(url);
-        var urlPlace = bus.at("n-url:"+ self.resolvedUrl);
+        var urlPlace = bus.location("n-url:"+ self.resolvedUrl);
         tryToDownload(self.resolvedUrl);
         urlPlace.on("done").as(self).host(self.uid).run(self._cogBecomeUrl).once().autorun();
 
@@ -1701,6 +1746,7 @@
         if(this.localSel)
             this.localSel.empty();
     };
+
 
     MapItem.prototype._resolvePath = function(path){
 
@@ -1780,6 +1826,7 @@
 
 
     MapItem.prototype.createAlias = function(def){
+        //var this.aliasZone =
         return this.aliasMap[def.name] = this._resolveUrl(def.url, def.path);
     };
 
@@ -1848,7 +1895,7 @@
             return;
         }
 
-        return sel.sense(eventName);
+        return sel.detect(eventName);
 
     };
 
@@ -1860,6 +1907,8 @@
         var pipePlace;
         var sensor;
         var actualPlaceNames = [];
+
+
 
         if(def.find){
 
@@ -1873,7 +1922,7 @@
             for (var i = 0; i < def.watch.length; i++) {
                 dataPlace = mi.find(def.watch[i], def.thing, def.where);
                 if (!def.optional && !dataPlace) {
-                    mi.throwError("Could not build sensor: " + def.thing + ":" + def.watch[0] + ":" + def.where + " in " + mi.resolvedUrl);
+                    mi.throwError("Could not build sensor: " + def.thing + ":" + def.watch[i] + ":" + def.where + " in " + mi.resolvedUrl);
                     return;
                 }
                 if (dataPlace)
@@ -1884,7 +1933,8 @@
             if (actualPlaceNames.length === 0)
                 return null; // optional places not found
 
-            sensor = bus.at(actualPlaceNames).sense(def.topic);
+            sensor = mi.cogZone.findData(actualPlaceNames, def.where, def.optional).on(def.topic);
+            //sensor = bus.location(actualPlaceNames).on(def.topic);
         }
 
         var context = mi.scriptData;
@@ -1893,19 +1943,16 @@
             .as(context)
             .host(mi.uid);
 
+        if(def.extract){
+            sensor.extract(def.extract);
+        }
+
+        if(def.adaptPresent){
+            sensor.adapt(this._resolveValueFromType(def.adapt, def.adaptType))
+        }
+
         if(def.change)
             sensor.change(def.change);
-
-
-
-        if (def.transformPresent) {
-            var transformMethod;
-            if (typeof def.transform === 'string' && def.transformType !== STRING) // todo is this precisely correct?
-                transformMethod = context[def.transform]; // method -- or constant value
-            else
-                transformMethod = def.transform;
-            sensor.transform(transformMethod);
-        }
 
         if (def.filter) {
             var filterMethod = context[def.filter];
@@ -1922,18 +1969,44 @@
             sensor.batch();
         }
 
+
+        if(def.transformPresent){
+            sensor.transform(this._resolveValueFromType(def.transform, def.transformType))
+        }
+
+        if(def.emitPresent){
+            sensor.emit(this._resolveValueFromType(def.emit, def.emitType))
+        }
+
         if(def.retain)
             sensor.retain();
+
+        if(def.group && multiSensor) {
+            multiSensor.batch();
+            sensor.group();
+        }
+
+        if(def.keep){
+            if(multiSensor)
+                multiSensor.keep(def.keep)
+            else
+                sensor.keep(def.keep);
+        }
 
         if(def.need && def.need.length > 0)
             sensor.need(def.need);
 
-        if(def.pipe) {
+        if(def.demand){
+            pipePlace = mi.demandData(def.demand); // todo move all this creation of data point into defs so creation order is same
+            mi.scriptData[def.demand] = pipePlace; // todo replace with exposeProp and check for existence, throw errors
+            sensor.pipe(pipePlace);
+        }
+        else if(def.pipe) {
             pipePlace = mi._find(def.pipe, 'dataMap', def.pipeWhere);
             sensor.pipe(pipePlace);
         }
 
-        if(def.run) {
+        if(def.run && !def.demand && !def.pipe) {
             var callback = context[def.run];
             sensor.run(callback);
         }
@@ -1994,7 +2067,20 @@
             return this._find(name, 'methodMap', where);
     };
 
+
+    //MapItem.prototype._find2 = function(name, map, where) {
+    //
+    //    if(map !== 'dataMap')
+    //        return this._find(name, map, where);
+    //
+    //    return this.cogZone.findData(name, where);
+    //};
+
     MapItem.prototype._find = function(name, map, where) {
+
+
+        if(map === 'dataMap')
+            return this.cogZone.findData(name, where);
 
         where = where || FIRST; // options: local, first, outer, last
 
@@ -2129,7 +2215,8 @@
     };
 
     MapItem.prototype.demandData = function(name){
-        return this.findData(name, LOCAL) || this.createData({name: name});
+        return this.cogZone.demandData(name);
+        //return this.findData(name, LOCAL) || this.createData({name: name});
     };
 
     MapItem.prototype.createConfig = function(name, value){
@@ -2245,7 +2332,8 @@
         if (!inherited)
             value = this._resolveValueFromType(value, type);
 
-        var data = self.dataMap[name] = bus.at("n-data:"+self.uid+":"+name);
+        var data = self.cogZone.demandData(name);
+        //var data = self.dataMap[name] = bus.location("n-data:"+self.uid+":"+name);
 
         if(def.prop){
             if(self.scriptData[def.name])
@@ -2257,7 +2345,16 @@
             data.tag(def.name);
         }
 
-        data.write(value);
+        if(def.adaptPresent){
+            data.adapt(this._resolveValueFromType(def.adapt, def.adaptType))
+        }
+
+        if(def.isRoute){
+            data.route();
+        }
+
+
+        data.initialize(value);
 
         if(def.servicePresent || def.url) {
 
@@ -2497,12 +2594,15 @@
             .done(function(response, status, xhr ){
 
                 self._location.write(response);
+                self._location.write(response, 'done');
+                self._location.write(response, 'always');
                 self._location.write(status, 'status');
 
             })
             .fail(function(xhr, status, error){
 
                 self._location.write(error, 'error');
+                self._location.write(error, 'always');
                 self._location.write(status, 'status');
 
             })
@@ -2533,7 +2633,7 @@
 
         feed._mapItem = mi;
         feed._name = def.name;
-        feed._feedPlace = bus.at("n-feed:" + mi.uid + ":"+ def.name);
+        feed._feedPlace = bus.location("n-feed:" + mi.uid + ":"+ def.name);
         feed._dataPlace = mi.demandData(dataName);
         feed._params = null;
         feed._primed = false; // once a request is made, executed on next js frame to allow easy batching, avoid multiple calls
